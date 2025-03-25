@@ -36,50 +36,147 @@ int main(void)
     int x, y;
     char timestamp[20]; // Buffer to store the timestamp
     int i, dy, dx; // Variables for loop counters (C89 compatibility)
-    int offset;
-    rawtime = time(NULL);
-    timeinfo = gmtime(&rawtime);
-    char *text_ptr = asctime(timeinfo);
-    int flag = 0;
+    int offset_stamp;
+    int offset_count;
+    int count = 0;
+    int pixel_ptr;
+    int pic_flag = 0; // 0: video going, 1: picture taken
+    int bw_flag = 0; // 0: white&black, 1: black&white
 
     *(Video_In_DMA_ptr + 3) = 0x4; // Enable the video
 
     // Wait for a key press to capture a frame
     while (1)
     {
-        if (*KEY_ptr == 0b0001 && flag == 0) // Check if any KEY was pressed
+        //retrieve time info
+        rawtime = time(NULL);
+        timeinfo = gmtime(&rawtime);
+        char *stamp_ptr = asctime(timeinfo); // pointer to timestamp to display
+        stamp_ptr[strlen(stamp_ptr)-1] = '\0'; // changes last character to null terminator
+        
+        if (*KEY_ptr == 0b0001 && pic_flag == 0) // Check if any KEY was pressed
         {
-            flag = 1; // denotes that picture was taken
-            printf("disable?");
-            *(Video_In_DMA_ptr + 3) = 0x0; // Disable the video to capture one frame
-            // Display the timestamp
-            printf("disabled");
-            offset = (0<<7) + 0;
-            while(*(text_ptr)){
-                printf("black ppl");
-                *((volatile char*) (0xC9000000+offset)) = *(text_ptr);
-                ++text_ptr;
-                ++offset;
-            }
             while (*KEY_ptr != 0); // Wait for pushbutton KEY release
-            //break;
+            pic_flag = 1; // denotes that picture was taken
+            *(Video_In_DMA_ptr + 3) = 0x0; // Disable the video to capture one frame
+
+            // Display the timestamp
+            offset_stamp = (1<<7) + 1;
+            while(*(stamp_ptr)){
+                *((volatile char*) (0xC9000000+offset_stamp)) = *(stamp_ptr);
+                ++stamp_ptr;
+                ++offset_stamp;
+            }
+
+            // Display the shot counter
+            offset_count = (58<<7) + 1;
+            ++count;
+            char count_buffer[12];
+            char *count_ptr = count_buffer;
+            snprintf(count_ptr, sizeof(count_ptr), "%d", count);
+            while(*(count_ptr)){
+                *((volatile char*) (0xC9000000+offset_count)) = *(count_ptr);
+                ++count_ptr;
+                ++offset_count;
+            }
         }
-        if (*KEY_ptr == 0b0001 && flag == 1){
-            flag = 0;
+        
+        if (*KEY_ptr == 0b0001 && pic_flag == 1)
+        {
+            pic_flag = 0; // denotes that the video resumed
+            
+            // remove the timestamp
+            offset_stamp = (1<<7) + 1;
+            while(*(stamp_ptr)){
+                *((volatile char*) (0xC9000000+offset_stamp)) = ' ';
+                ++stamp_ptr;
+                ++offset_stamp;
+            }
+
             *(Video_In_DMA_ptr + 3) = 0x4; // Enable the video
             while (*KEY_ptr != 0); // Wait for pushbutton KEY release
+        }
+
+        if (*KEY_ptr == 0b0010) // Check if KEY_2 was pressed
+        {
+            while (*KEY_ptr != 0); // Wait for pushbutton KEY release
+            short temp_frame[240][320]; // temp buffer for all pixels in frame
+
+            // Read and store the mirrored frame into the buffer
+            for (y = 0; y < 240; y++) {
+                for (x = 0; x < 320; x++) {
+                    temp_frame[y][x] = *(Video_Mem_ptr + ((239-y) << 9) + x); // store pixels in reverse horizontal order
+                }
+            }
+            
+            // Write the mirrored frame back to the video memory
+            for (y = 0; y < 240; y++) {
+                for (x = 0; x < 320; x++) {
+                    *(Video_Mem_ptr + (y << 9) + x) = temp_frame[y][x];
+                }
+            }
+        }
+        if (*KEY_ptr == 0b0100) // Check if KEY_2 was pressed
+        {
+            while (*KEY_ptr != 0); // Wait for pushbutton KEY release
+            short temp_frame[240][320]; // temp buffer for all pixels in frame
+
+            // Read and store the mirrored frame into the buffer
+            for (y = 0; y < 240; y++) {
+                for (x = 0; x < 320; x++) {
+                    temp_frame[y][x] = *(Video_Mem_ptr + (y << 9) + (319-x)); // store pixels in reverse horizontal order
+                }
+            }
+            
+            // Write the mirrored frame back to the video memory
+            for (y = 0; y < 240; y++) {
+                for (x = 0; x < 320; x++) {
+                    *(Video_Mem_ptr + (y << 9) + x) = temp_frame[y][x];
+                }
+            }
+        }
+
+        if (*KEY_ptr == 0b1000 && bw_flag == 0) // Check if KEY_3 was pressed
+        {
+            while (*KEY_ptr != 0); // Wait for pushbutton KEY release
+            
+            bw_flag = 1; // denotes that image is now black&white
+
+            // Display the captured frame in black and white
+            for (y = 0; y < 240; y++) {
+                for (x = 0; x < 320; x++) {
+                    short pixel = *(Video_Mem_ptr + (y << 9) + x); // Read the pixel value
+                    // Convert the pixel to black and white using an intensity threshold
+                    short intensity = (pixel & 0xFF); // Extract the grayscale intensity (assuming 8-bit grayscale)
+                    short bw_pixel;
+                    if (intensity > 128){
+                        bw_pixel = 0xFFFF;
+                    } else {
+                        bw_pixel = 0x0000;
+                    }
+                    *(Video_Mem_ptr + (y << 9) + x) = bw_pixel; // Write the black-and-white pixel
+                }
+            }
         }
 
         if (*KEY_ptr == 0b1000) // Check if KEY_3 was pressed
         {
             while (*KEY_ptr != 0); // Wait for pushbutton KEY release
-            // Display the captured frame in black and white
+            
+            bw_flag = 0; // denotes that image is now white&black
+
+            // Display the captured frame in white and black
             for (y = 0; y < 240; y++) {
                 for (x = 0; x < 320; x++) {
                     short pixel = *(Video_Mem_ptr + (y << 9) + x); // Read the pixel value
-                    // Convert the pixel to black and white using a threshold
+                    // Convert the pixel to black and white using an intensity threshold
                     short intensity = (pixel & 0xFF); // Extract the grayscale intensity (assuming 8-bit grayscale)
-                    short bw_pixel = (intensity > 128) ? 0xFFFF : 0x0000; // Apply threshold
+                    short bw_pixel;
+                    if (intensity > 128){
+                        bw_pixel = 0x0000;
+                    } else {
+                        bw_pixel = 0xFFFF;
+                    }
                     *(Video_Mem_ptr + (y << 9) + x) = bw_pixel; // Write the black-and-white pixel
                 }
             }
