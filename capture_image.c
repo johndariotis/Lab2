@@ -6,17 +6,6 @@
 #define VIDEO_IN_BASE         0xFF203060
 #define FPGA_ONCHIP_BASE      0xC8000000
 
-// Function to get the current timestamp as a string
-void get_timestamp(char *timestamp, int size) {
-    time_t rawtime;
-    struct tm *timeinfo;
-
-    time(&rawtime);
-    timeinfo = localtime(&rawtime);
-
-    strftime(timestamp, size, "%Y-%m-%d %H:%M:%S", timeinfo);
-}
-
 // Simple 8x8 font for rendering characters
 const unsigned char font[96][8] = {
     // Include a simple 8x8 font here (e.g., ASCII characters 32-127)
@@ -34,12 +23,9 @@ int main(void)
     volatile short * Video_Mem_ptr     = (short *) FPGA_ONCHIP_BASE;
 
     int x, y;
-    char timestamp[20]; // Buffer to store the timestamp
-    int i, dy, dx; // Variables for loop counters (C89 compatibility)
     int offset_stamp;
     int offset_count;
     int count = 0;
-    int pixel_ptr;
     int pic_flag = 0; // 0: video going, 1: picture taken
     int bw_flag = 0; // 0: white&black, 1: black&white
 
@@ -51,6 +37,7 @@ int main(void)
         //retrieve time info
         rawtime = time(NULL);
         timeinfo = gmtime(&rawtime);
+        timeinfo->tm_hour-=4;
         char *stamp_ptr = asctime(timeinfo); // pointer to timestamp to display
         stamp_ptr[strlen(stamp_ptr)-1] = '\0'; // changes last character to null terminator
         
